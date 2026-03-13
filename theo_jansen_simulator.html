@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>テオヤンセン機構シミュレータ</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --line: #d8dce8;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --accent2: #1d4ed8;
+      --danger: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .wrap {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 16px;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+    }
+    .sidebar {
+      padding: 16px;
+      overflow: auto;
+      max-height: calc(100vh - 32px);
+    }
+    .viewer {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.35rem;
+    }
+    h2 {
+      font-size: 1rem;
+      margin: 18px 0 10px;
+    }
+    p.note {
+      margin: 0 0 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 0.92rem;
+    }
+    .toolbar, .playbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    button {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover { border-color: #b7bfd3; }
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    button.primary:hover { background: var(--accent2); }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .param {
+      border-top: 1px solid #eef1f7;
+      padding: 10px 0;
+    }
+    .param:first-of-type { border-top: none; }
+    .param-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .param label {
+      font-weight: 700;
+      font-size: 0.94rem;
+    }
+    .param small {
+      color: var(--muted);
+      display: block;
+      margin-top: 2px;
+      font-weight: 500;
+    }
+    .param-row {
+      display: grid;
+      grid-template-columns: 1fr 90px;
+      gap: 10px;
+      align-items: center;
+    }
+    input[type="range"] { width: 100%; }
+    input[type="number"] {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      font: inherit;
+    }
+    .mini {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .field label {
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .field input[type="number"] {
+      padding: 8px 10px;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      background: #fbfcff;
+    }
+    .card .k {
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+    }
+    .card .v {
+      font-weight: 800;
+      font-size: 1rem;
+    }
+    canvas {
+      width: 100%;
+      height: calc(100vh - 180px);
+      min-height: 560px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      display: block;
+    }
+    .footer-note {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+    @media (max-width: 980px) {
+      .wrap { grid-template-columns: 1fr; }
+      .sidebar { max-height: none; }
+      canvas { height: 65vh; min-height: 420px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <aside class="panel sidebar">
+      <h1>テオヤンセン機構シミュレータ</h1>
+      <p class="note">初期値は広く使われるテオヤンセン機構の標準寸法です。固定点は O=(0,0), B=(-38,-7.8)、クランク長は 15 としています。</p>
+
+      <div class="toolbar">
+        <button id="undoBtn">取り消し</button>
+        <button id="redoBtn">やり直し</button>
+        <button id="resetBtn">初期値に戻す</button>
+        <button id="captureBtn">現在値を履歴へ保存</button>
+      </div>
+
+      <div class="playbar">
+        <button id="playBtn" class="primary">▶ 再生</button>
+        <button id="stepBtn">1ステップ</button>
+        <button id="trailBtn">足先軌跡: ON</button>
+        <button id="gridBtn">グリッド: ON</button>
+      </div>
+
+      <div class="mini">
+        <div class="field">
+          <label for="speedInput">角速度 (deg/frame)</label>
+          <input id="speedInput" type="number" min="0.1" max="10" step="0.1" value="1.2" />
+        </div>
+        <div class="field">
+          <label for="zoomInput">表示倍率</label>
+          <input id="zoomInput" type="number" min="1" max="12" step="0.1" value="4.8" />
+        </div>
+      </div>
+
+      <h2>パラメータ</h2>
+      <div id="paramList"></div>
+
+      <div class="stats">
+        <div class="card"><div class="k">歩幅</div><div class="v" id="strideVal">-</div></div>
+        <div class="card"><div class="k">足上げ高</div><div class="v" id="liftVal">-</div></div>
+        <div class="card"><div class="k">支持率</div><div class="v" id="supportVal">-</div></div>
+      </div>
+
+      <div class="footer-note">
+        標準寸法の出典として、Theo Jansen の値を直接用いた解析資料では固定点 B を (-38, -7.8)、各リンク長を図示しています。([robotpark.com.tr](https://www.robotpark.com.tr/blog/LR/51018_THEO-JANSEN-Details.pdf))<br>
+        具体的な数値配置は図 3.3.1 のスクリーンショットでも確認できます。([robotpark.com.tr](https://www.robotpark.com.tr/blog/LR/51018_THEO-JANSEN-Details.pdf))
+      </div>
+    </aside>
+
+    <main class="panel viewer">
+      <canvas id="canvas" width="1200" height="900"></canvas>
+    </main>
+  </div>
+
+  <script>
+    const DEFAULTS = {
+      crank: 15.0,    // 0-1
+      a12: 50.0,      // 1-2
+      a24: 55.8,      // 2-4
+      a43: 40.1,      // 4-3
+      a23: 41.5,      // 2-3
+      a35: 39.3,      // 3-5
+      a15: 61.9,      // 1-5
+      a57: 49.0,      // 5-7
+      a46: 39.4,      // 4-6
+      a67: 65.7,      // 6-7
+      a56: 36.7,      // 5-6
+      bx: -38.0,
+      by: -7.8,
+    };
+
+    const PARAMS = [
+      { key: 'crank', label: 'O-1', desc: 'クランク長', min: 5, max: 80, step: 0.1 },
+      { key: 'a12', label: '1-2', desc: '上前リンク', min: 10, max: 120, step: 0.1 },
+      { key: 'a24', label: '2-4', desc: '上外リンク', min: 10, max: 140, step: 0.1 },
+      { key: 'a43', label: '4-B', desc: '固定点Bへの上リンク', min: 10, max: 120, step: 0.1 },
+      { key: 'a23', label: '2-B', desc: '上内リンク', min: 10, max: 120, step: 0.1 },
+      { key: 'a35', label: 'B-5', desc: '中央下リンク', min: 10, max: 120, step: 0.1 },
+      { key: 'a15', label: '1-5', desc: '右下リンク', min: 10, max: 140, step: 0.1 },
+      { key: 'a57', label: '5-7', desc: '足先リンク1', min: 10, max: 140, step: 0.1 },
+      { key: 'a46', label: '4-6', desc: '左下リンク', min: 10, max: 120, step: 0.1 },
+      { key: 'a67', label: '6-7', desc: '足先リンク2', min: 10, max: 160, step: 0.1 },
+      { key: 'a56', label: '5-6', desc: '下横リンク', min: 5, max: 120, step: 0.1 },
+      { key: 'bx', label: 'Bx', desc: '固定点BのX座標', min: -120, max: 40, step: 0.1 },
+      { key: 'by', label: 'By', desc: '固定点BのY座標', min: -80, max: 80, step: 0.1 },
+    ];
+
+    const state = {
+      params: structuredClone(DEFAULTS),
+      theta: 0,
+      speedDeg: 1.2,
+      zoom: 4.8,
+      playing: false,
+      showTrail: true,
+      showGrid: true,
+      history: [structuredClone(DEFAULTS)],
+      historyIndex: 0,
+      dragCommitPending: false,
+      solved: null,
+      lastValid: null,
+      invalid: false,
+    };
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const paramList = document.getElementById('paramList');
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const captureBtn = document.getElementById('captureBtn');
+    const playBtn = document.getElementById('playBtn');
+    const stepBtn = document.getElementById('stepBtn');
+    const trailBtn = document.getElementById('trailBtn');
+    const gridBtn = document.getElementById('gridBtn');
+    const speedInput = document.getElementById('speedInput');
+    const zoomInput = document.getElementById('zoomInput');
+    const strideVal = document.getElementById('strideVal');
+    const liftVal = document.getElementById('liftVal');
+    const supportVal = document.getElementById('supportVal');
+
+    function dist(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function circleIntersections(c0, r0, c1, r1) {
+      const dx = c1.x - c0.x;
+      const dy = c1.y - c0.y;
+      const d = Math.hypot(dx, dy);
+      if (d === 0) return [];
+      if (d > r0 + r1 || d < Math.abs(r0 - r1)) return [];
+      const a = (r0 * r0 - r1 * r1 + d * d) / (2 * d);
+      const h2 = r0 * r0 - a * a;
+      if (h2 < -1e-7) return [];
+      const h = Math.sqrt(Math.max(0, h2));
+      const xm = c0.x + (a * dx) / d;
+      const ym = c0.y + (a * dy) / d;
+      const rx = -dy * (h / d);
+      const ry = dx * (h / d);
+      return [
+        { x: xm + rx, y: ym + ry },
+        { x: xm - rx, y: ym - ry },
+      ];
+    }
+
+    function choosePoint(candidates, prev, preference) {
+      if (!candidates.length) return null;
+      if (prev) {
+        return candidates.slice().sort((p, q) => dist(p, prev) - dist(q, prev))[0];
+      }
+      if (preference === 'upper') {
+        return candidates.slice().sort((p, q) => q.y - p.y)[0];
+      }
+      if (preference === 'lower') {
+        return candidates.slice().sort((p, q) => p.y - q.y)[0];
+      }
+      if (preference === 'left') {
+        return candidates.slice().sort((p, q) => p.x - q.x)[0];
+      }
+      if (preference === 'right') {
+        return candidates.slice().sort((p, q) => q.x - p.x)[0];
+      }
+      return candidates[0];
+    }
+
+    function solveCycle(params, startTheta = 0, steps = 720) {
+      const O = { x: 0, y: 0 };
+      const B = { x: params.bx, y: params.by };
+      const poses = [];
+      let prev = null;
+
+      for (let i = 0; i <= steps; i++) {
+        const t = startTheta + (Math.PI * 2 * i) / steps;
+        const P1 = {
+          x: O.x + params.crank * Math.cos(t),
+          y: O.y + params.crank * Math.sin(t),
+        };
+
+        const p2 = choosePoint(
+          circleIntersections(P1, params.a12, B, params.a23),
+          prev?.p2,
+          'upper'
+        );
+        const p5 = choosePoint(
+          circleIntersections(P1, params.a15, B, params.a35),
+          prev?.p5,
+          'lower'
+        );
+        if (!p2 || !p5) return null;
+
+        const p4 = choosePoint(
+          circleIntersections(p2, params.a24, B, params.a43),
+          prev?.p4,
+          'left'
+        );
+        if (!p4) return null;
+
+        const p6 = choosePoint(
+          circleIntersections(p4, params.a46, p5, params.a56),
+          prev?.p6,
+          'left'
+        );
+        if (!p6) return null;
+
+        const p7 = choosePoint(
+          circleIntersections(p5, params.a57, p6, params.a67),
+          prev?.p7,
+          'lower'
+        );
+        if (!p7) return null;
+
+        const pose = { theta: t, O, B, p1: P1, p2, p4, p5, p6, p7 };
+        poses.push(pose);
+        prev = pose;
+      }
+      return poses;
+    }
+
+    function computeStats(poses) {
+      const foot = poses.map(p => p.p7);
+      const xs = foot.map(p => p.x);
+      const ys = foot.map(p => p.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      const yFloor = minY + (maxY - minY) * 0.07;
+      const supportCount = foot.filter(p => p.y <= yFloor).length;
+      return {
+        stride: maxX - minX,
+        lift: maxY - minY,
+        supportRatio: supportCount / foot.length,
+        foot,
+      };
+    }
+
+    function pushHistory(snapshot) {
+      const current = JSON.stringify(state.history[state.historyIndex]);
+      const next = JSON.stringify(snapshot);
+      if (current === next) return;
+      state.history = state.history.slice(0, state.historyIndex + 1);
+      state.history.push(structuredClone(snapshot));
+      state.historyIndex = state.history.length - 1;
+      refreshHistoryButtons();
+    }
+
+    function applyParams(snapshot, push = false) {
+      state.params = structuredClone(snapshot);
+      if (push) pushHistory(state.params);
+      syncInputs();
+      solveAndRender();
+    }
+
+    function refreshHistoryButtons() {
+      undoBtn.disabled = state.historyIndex <= 0;
+      redoBtn.disabled = state.historyIndex >= state.history.length - 1;
+    }
+
+    function buildParamUI() {
+      paramList.innerHTML = '';
+      PARAMS.forEach(meta => {
+        const box = document.createElement('div');
+        box.className = 'param';
+        box.innerHTML = `
+          <div class="param-head">
+            <div>
+              <label for="range-${meta.key}">${meta.label}</label>
+              <small>${meta.desc}</small>
+            </div>
+          </div>
+          <div class="param-row">
+            <input id="range-${meta.key}" type="range" min="${meta.min}" max="${meta.max}" step="${meta.step}" />
+            <input id="num-${meta.key}" type="number" min="${meta.min}" max="${meta.max}" step="${meta.step}" />
+          </div>
+        `;
+        paramList.appendChild(box);
+
+        const range = box.querySelector(`#range-${meta.key}`);
+        const num = box.querySelector(`#num-${meta.key}`);
+
+        const setVal = (value, commit = false) => {
+          const v = Number(value);
+          if (!Number.isFinite(v)) return;
+          state.params[meta.key] = v;
+          range.value = String(v);
+          num.value = String(v);
+          solveAndRender();
+          if (commit) pushHistory(state.params);
+        };
+
+        range.addEventListener('input', e => {
+          state.dragCommitPending = true;
+          setVal(e.target.value, false);
+        });
+        range.addEventListener('change', e => {
+          setVal(e.target.value, true);
+          state.dragCommitPending = false;
+        });
+        num.addEventListener('change', e => setVal(e.target.value, true));
+        num.addEventListener('input', e => setVal(e.target.value, false));
+      });
+      syncInputs();
+    }
+
+    function syncInputs() {
+      PARAMS.forEach(meta => {
+        document.getElementById(`range-${meta.key}`).value = state.params[meta.key];
+        document.getElementById(`num-${meta.key}`).value = state.params[meta.key];
+      });
+      speedInput.value = String(state.speedDeg);
+      zoomInput.value = String(state.zoom);
+      trailBtn.textContent = `足先軌跡: ${state.showTrail ? 'ON' : 'OFF'}`;
+      gridBtn.textContent = `グリッド: ${state.showGrid ? 'ON' : 'OFF'}`;
+      playBtn.textContent = state.playing ? '⏸ 停止' : '▶ 再生';
+      refreshHistoryButtons();
+    }
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(rect.width * ratio);
+      canvas.height = Math.round(rect.height * ratio);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      render();
+    }
+
+    function worldToScreen(p, transform) {
+      return {
+        x: transform.cx + p.x * transform.scale,
+        y: transform.cy - p.y * transform.scale,
+      };
+    }
+
+    function getTransform(stats) {
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      const foot = stats?.foot || [];
+      const extra = [
+        { x: 0, y: 0 },
+        { x: state.params.bx, y: state.params.by },
+        ...foot,
+      ];
+      const xs = extra.map(p => p.x);
+      const ys = extra.map(p => p.y);
+      const minX = Math.min(...xs, -90), maxX = Math.max(...xs, 70);
+      const minY = Math.min(...ys, -95), maxY = Math.max(...ys, 55);
+      const contentW = Math.max(1, maxX - minX);
+      const contentH = Math.max(1, maxY - minY);
+      const autoScale = Math.min((width - 80) / contentW, (height - 80) / contentH);
+      const scale = autoScale * (state.zoom / 4.8);
+      return {
+        scale,
+        cx: width / 2 - ((minX + maxX) / 2) * scale,
+        cy: height / 2 + ((minY + maxY) / 2) * scale,
+      };
+    }
+
+    function drawGrid(transform) {
+      if (!state.showGrid) return;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      ctx.save();
+      ctx.strokeStyle = '#eef2f7';
+      ctx.lineWidth = 1;
+      const spacing = 10 * transform.scale;
+      if (spacing > 8) {
+        for (let x = transform.cx % spacing; x <= width; x += spacing) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+          ctx.stroke();
+        }
+        for (let y = transform.cy % spacing; y <= height; y += spacing) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+        }
+      }
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(0, transform.cy);
+      ctx.lineTo(width, transform.cy);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(transform.cx, 0);
+      ctx.lineTo(transform.cx, height);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawPolyline(points, transform, color = '#94a3b8', width = 2) {
+      if (!points || points.length < 2) return;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      const p0 = worldToScreen(points[0], transform);
+      ctx.moveTo(p0.x, p0.y);
+      for (let i = 1; i < points.length; i++) {
+        const p = worldToScreen(points[i], transform);
+        ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawLink(a, b, transform, color = '#111827', width = 3) {
+      const pa = worldToScreen(a, transform);
+      const pb = worldToScreen(b, transform);
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pa.x, pa.y);
+      ctx.lineTo(pb.x, pb.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawJoint(p, transform, fill = '#fff', stroke = '#111827', r = 5) {
+      const s = worldToScreen(p, transform);
+      ctx.save();
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawLabel(text, p, transform) {
+      const s = worldToScreen(p, transform);
+      ctx.save();
+      ctx.fillStyle = '#475569';
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.fillText(text, s.x + 8, s.y - 8);
+      ctx.restore();
+    }
+
+    function solveAndRender() {
+      const poses = solveCycle(state.params, state.theta, 720);
+      if (!poses) {
+        state.invalid = true;
+        state.solved = null;
+        render();
+        strideVal.textContent = '不可';
+        liftVal.textContent = '不可';
+        supportVal.textContent = '不可';
+        return;
+      }
+      state.invalid = false;
+      const stats = computeStats(poses);
+      state.solved = { poses, stats, current: poses[0] };
+      state.lastValid = structuredClone(state.params);
+      strideVal.textContent = stats.stride.toFixed(1);
+      liftVal.textContent = stats.lift.toFixed(1);
+      supportVal.textContent = `${(stats.supportRatio * 100).toFixed(0)}%`;
+      render();
+    }
+
+    function render() {
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+
+      const transform = getTransform(state.solved?.stats);
+      drawGrid(transform);
+
+      if (!state.solved) {
+        ctx.save();
+        ctx.fillStyle = '#b91c1c';
+        ctx.font = '600 18px system-ui, sans-serif';
+        ctx.fillText('このパラメータでは機構を解けません。リンク長の組み合わせを戻してください。', 24, 40);
+        ctx.restore();
+        return;
+      }
+
+      const { current, stats } = state.solved;
+      if (state.showTrail) {
+        drawPolyline(stats.foot, transform, '#93c5fd', 2);
+      }
+
+      const O = current.O, B = current.B;
+      drawLink(O, current.p1, transform, '#2563eb', 4);
+      drawLink(current.p1, current.p2, transform);
+      drawLink(current.p2, current.p4, transform);
+      drawLink(current.p4, B, transform);
+      drawLink(current.p2, B, transform, '#334155');
+      drawLink(B, current.p5, transform);
+      drawLink(current.p1, current.p5, transform);
+      drawLink(current.p4, current.p6, transform);
+      drawLink(current.p5, current.p6, transform, '#334155');
+      drawLink(current.p5, current.p7, transform, '#0f172a', 4);
+      drawLink(current.p6, current.p7, transform, '#0f172a', 4);
+
+      [
+        ['O', O], ['1', current.p1], ['2', current.p2], ['4', current.p4],
+        ['B', B], ['5', current.p5], ['6', current.p6], ['7', current.p7]
+      ].forEach(([label, p]) => {
+        drawJoint(p, transform, '#fff', '#111827', label === '7' ? 5.5 : 4.8);
+        drawLabel(label, p, transform);
+      });
+
+      const foot = worldToScreen(current.p7, transform);
+      ctx.save();
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '600 14px system-ui, sans-serif';
+      ctx.fillText(`θ = ${(state.theta * 180 / Math.PI % 360 + 360).toFixed(1)}°`, 18, 26);
+      ctx.fillText(`足先 = (${current.p7.x.toFixed(1)}, ${current.p7.y.toFixed(1)})`, 18, 48);
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(foot.x, foot.y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function tick() {
+      if (state.playing) {
+        state.theta += (state.speedDeg * Math.PI) / 180;
+        solveAndRender();
+      }
+      requestAnimationFrame(tick);
+    }
+
+    undoBtn.addEventListener('click', () => {
+      if (state.historyIndex <= 0) return;
+      state.historyIndex -= 1;
+      applyParams(state.history[state.historyIndex], false);
+      refreshHistoryButtons();
+    });
+
+    redoBtn.addEventListener('click', () => {
+      if (state.historyIndex >= state.history.length - 1) return;
+      state.historyIndex += 1;
+      applyParams(state.history[state.historyIndex], false);
+      refreshHistoryButtons();
+    });
+
+    resetBtn.addEventListener('click', () => {
+      applyParams(DEFAULTS, true);
+    });
+
+    captureBtn.addEventListener('click', () => {
+      pushHistory(state.params);
+    });
+
+    playBtn.addEventListener('click', () => {
+      state.playing = !state.playing;
+      syncInputs();
+    });
+
+    stepBtn.addEventListener('click', () => {
+      state.theta += (state.speedDeg * Math.PI) / 180;
+      solveAndRender();
+    });
+
+    trailBtn.addEventListener('click', () => {
+      state.showTrail = !state.showTrail;
+      syncInputs();
+      render();
+    });
+
+    gridBtn.addEventListener('click', () => {
+      state.showGrid = !state.showGrid;
+      syncInputs();
+      render();
+    });
+
+    speedInput.addEventListener('change', () => {
+      const v = Number(speedInput.value);
+      if (Number.isFinite(v) && v > 0) state.speedDeg = v;
+      syncInputs();
+    });
+
+    zoomInput.addEventListener('change', () => {
+      const v = Number(zoomInput.value);
+      if (Number.isFinite(v) && v > 0) state.zoom = v;
+      syncInputs();
+      render();
+    });
+
+    window.addEventListener('resize', resizeCanvas);
+
+    buildParamUI();
+    refreshHistoryButtons();
+    solveAndRender();
+    resizeCanvas();
+    tick();
+  </script>
+</body>
+</html>

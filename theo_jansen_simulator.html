@@ -193,6 +193,9 @@
         <button id="redoBtn">やり直し</button>
         <button id="resetBtn">初期値に戻す</button>
         <button id="captureBtn">現在値を履歴へ保存</button>
+        <button id="exportCsvBtn">CSV書き出し</button>
+        <button id="importCsvBtn">CSV読み込み</button>
+        <input id="importCsvInput" type="file" accept=".csv,text/csv" style="display:none" />
       </div>
 
       <div class="playbar">
@@ -289,6 +292,9 @@
     const redoBtn = document.getElementById('redoBtn');
     const resetBtn = document.getElementById('resetBtn');
     const captureBtn = document.getElementById('captureBtn');
+    const exportCsvBtn = document.getElementById('exportCsvBtn');
+    const importCsvBtn = document.getElementById('importCsvBtn');
+    const importCsvInput = document.getElementById('importCsvInput');
     const playBtn = document.getElementById('playBtn');
     const stepBtn = document.getElementById('stepBtn');
     const trailBtn = document.getElementById('trailBtn');
@@ -710,6 +716,94 @@
       requestAnimationFrame(tick);
     }
 
+
+
+    function csvEscape(value) {
+      const s = String(value ?? '');
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+
+    function buildCsvText() {
+      const rows = [['key','label','value']];
+      PARAMS.forEach(meta => rows.push([meta.key, meta.label, state.params[meta.key]]));
+      rows.push(['speedDeg','角速度', state.speedDeg]);
+      rows.push(['zoom','表示倍率', state.zoom]);
+      return rows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+    }
+
+    function exportCsv() {
+      const csv = '\uFEFF' + buildCsvText();
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'theo_jansen_params.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function parseCsvLine(line) {
+      const result = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQuotes) {
+          if (ch === '"') {
+            if (line[i + 1] === '"') {
+              cur += '"';
+              i++;
+            } else {
+              inQuotes = false;
+            }
+          } else {
+            cur += ch;
+          }
+        } else if (ch === ',') {
+          result.push(cur);
+          cur = '';
+        } else if (ch === '"') {
+          inQuotes = true;
+        } else {
+          cur += ch;
+        }
+      }
+      result.push(cur);
+      return result;
+    }
+
+    function importCsvText(text) {
+      const cleaned = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const lines = cleaned.split('\n').map(v => v.trim()).filter(Boolean);
+      if (!lines.length) return;
+      const snapshot = structuredClone(state.params);
+      let nextSpeed = state.speedDeg;
+      let nextZoom = state.zoom;
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCsvLine(lines[i]);
+        const key = (cols[0] || '').trim();
+        const value = Number((cols[2] || '').trim());
+        if (!key || !Number.isFinite(value)) continue;
+        if (PARAMS.some(meta => meta.key === key)) snapshot[key] = value;
+        else if (key === 'speedDeg') nextSpeed = value;
+        else if (key === 'zoom') nextZoom = value;
+      }
+      const poses = solveCycle(snapshot, state.theta, 720);
+      if (!poses) {
+        alert('このCSVの値では機構を解けませんでした。読み込みは反映していません。');
+        return;
+      }
+      state.params = snapshot;
+      state.speedDeg = nextSpeed;
+      state.zoom = nextZoom;
+      pushHistory(state.params);
+      syncInputs();
+      solveAndRender();
+      resizeCanvas();
+    }
+
     undoBtn.addEventListener('click', () => {
       if (state.historyIndex <= 0) return;
       state.historyIndex -= 1;
@@ -765,6 +859,25 @@
       if (Number.isFinite(v) && v > 0) state.zoom = v;
       syncInputs();
       render();
+    });
+
+    exportCsvBtn.addEventListener('click', exportCsv);
+
+    importCsvBtn.addEventListener('click', () => {
+      importCsvInput.value = '';
+      importCsvInput.click();
+    });
+
+    importCsvInput.addEventListener('change', async () => {
+      const file = importCsvInput.files && importCsvInput.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        importCsvText(text);
+      } catch (err) {
+        console.error(err);
+        alert('CSVの読み込みに失敗しました。');
+      }
     });
 
     window.addEventListener('resize', resizeCanvas);
